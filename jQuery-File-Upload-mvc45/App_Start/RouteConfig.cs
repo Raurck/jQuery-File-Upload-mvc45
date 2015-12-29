@@ -12,7 +12,9 @@ namespace jQuery_File_Upload_mvc45
         public static void RegisterRoutes(RouteCollection routes)
         {
             routes.IgnoreRoute("{resource}.axd/{*pathInfo}");
+            
             routes.IgnoreRoute("upload/{*pathInfo}");
+
             routes.MapRoute(
                 name: "Default",
                 url: "{controller}/{action}/{id}",

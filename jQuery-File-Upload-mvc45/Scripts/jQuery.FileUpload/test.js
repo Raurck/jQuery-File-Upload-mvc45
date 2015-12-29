@@ -10,7 +10,7 @@
  */
 
 /* global $, QUnit, window, document, expect, module, test, asyncTest, start, ok, strictEqual, notStrictEqual */
-
+/*
 $(document).ready(function () {
     // jshint nomen:false
     'use strict';
@@ -1290,3 +1290,4 @@ $(document).ready(function () {
     });
 
 });
+*/
