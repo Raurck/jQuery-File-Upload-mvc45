@@ -86,11 +86,12 @@ public class UploadHandler : IHttpHandler
     // Delete file from the server
     private void DeleteFile(HttpContext context)
     {
-        var statuses = new List<FilesStatus>();
+        var statuses = new List<string>();
         var filePath = StorageRoot + context.Request["f"];
         if (File.Exists(filePath))
         {
-            statuses.Add(new FilesStatus(new FileInfo(filePath)));
+            statuses.Add(filePath);
+
             File.Delete(filePath);
         }
 
@@ -98,9 +99,9 @@ public class UploadHandler : IHttpHandler
 
         var files1 = "{ \"files\": [";
         var firstRun = true;
-        foreach (FilesStatus fs in statuses)
+        foreach (string fs in statuses)
         {
-            files1 = files1 + (firstRun ? "" : ",") + "{ \"" + fs.name + "\": true }";
+            files1 = files1 + (firstRun ? "" : ",") + "{ \"" + fs + "\": true }";
             if (firstRun) { firstRun = false; }
         }
         files1 = files1 + "]}";

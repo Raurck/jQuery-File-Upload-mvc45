@@ -1,7 +1,6 @@
 ﻿using System;
 using System.IO;
 using System.Drawing;
-using System.IO;
 
 namespace jQuery_File_Upload_mvc45.Upload
 {
@@ -9,6 +8,10 @@ namespace jQuery_File_Upload_mvc45.Upload
     {
         
         public const string HandlerPath = "/Upload/";
+        const int tmbSize = 80;
+        const string tmbSubfolder = "tmb";
+        const string imageExtension = ".jpg|.png|.gif";
+        const string thumbnailUrlDef = "/Content/img/generalFile.png";
 
         //public string group { get; set; }
         public string name { get; set; }
@@ -32,19 +35,20 @@ namespace jQuery_File_Upload_mvc45.Upload
             Image.GetThumbnailImageAbort callback =
                               new Image.GetThumbnailImageAbort(ThumbnailCallback);
 
-            if (System.IO.File.Exists(imageFileName))
+            if (File.Exists(imageFileName))
             {
 
                 int trgWidth = 4 * trgHeigth / 3;
 
-                Image img1 = new Bitmap(imageFileName);
+                string fileName = Path.Combine(Path.GetDirectoryName(imageFileName), tmbSubfolder, Path.GetFileNameWithoutExtension(imageFileName) + Path.GetExtension(imageFileName));
 
-                string fileName = Path.Combine(Path.GetDirectoryName(imageFileName),"tmb", Path.GetFileNameWithoutExtension(imageFileName) + Path.GetExtension(imageFileName));
-
-                if (System.IO.File.Exists(fileName))
+                if (File.Exists(fileName))
                 {
                     return fileName;
                 }
+
+                Image img1 = new Bitmap(imageFileName);
+
                 int h = 3 * img1.Width / 4;
                 int w = 4 * img1.Height / 3;
 
@@ -62,11 +66,11 @@ namespace jQuery_File_Upload_mvc45.Upload
 
                 using (Image img2 = img1.GetThumbnailImage(trgWidth, trgHeigth, callback, new IntPtr()))
                 {
-                    if (!Directory.Exists(Path.Combine(Path.GetDirectoryName(imageFileName), "tmb")))
+                    if (!Directory.Exists(Path.Combine(Path.GetDirectoryName(imageFileName), tmbSubfolder)))
                     {
-                        Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(imageFileName), "tmb"));
+                        Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(imageFileName), tmbSubfolder));
                     }
-                    using (FileStream fs = System.IO.File.OpenWrite(fileName))
+                    using (FileStream fs = File.OpenWrite(fileName))
                     {
                         img2.Save(fs, System.Drawing.Imaging.ImageFormat.Jpeg);
                     }
@@ -75,7 +79,7 @@ namespace jQuery_File_Upload_mvc45.Upload
                 img1.Dispose();
                 return fileName;
             }
-            return null;
+            return imageFileName;
         }
 
         public FilesStatus(FileInfo fileInfo)
@@ -98,16 +102,22 @@ namespace jQuery_File_Upload_mvc45.Upload
             deleteUrl = HandlerPath + "?f=" + fileName;
             deleteType = "DELETE";
 
-            var ext = Path.GetExtension(fullPath);
+            thumbnailUrl = thumbnailUrlDef;
 
-            var fileSize = ConvertBytesToMegabytes(new FileInfo(fullPath).Length);
-            if (fileSize > 0.5 || !IsImage(ext)) thumbnailUrl = "/Content/img/generalFile.png";
-            else thumbnailUrl = @"data:image/png;base64," + EncodeFile(Scale(fullPath,80));
+            if (IsImage(Path.GetExtension(fullPath)))
+            {
+                thumbnailUrl = @"data:image/jpg;base64," + EncodeFile(Scale(fullPath, tmbSize));
+            }
         }
 
         private bool IsImage(string ext)
         {
-            return ext == ".gif" || ext == ".jpg" || ext == ".png";
+            bool isImg = false;
+            foreach (var extStr in imageExtension.Split('|'))
+            {
+                isImg = isImg ||( ext.ToLower() == extStr.ToLower());
+            }
+            return isImg;
         }
 
         private string EncodeFile(string fileName)
