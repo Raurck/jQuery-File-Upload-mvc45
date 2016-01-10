@@ -72,6 +72,7 @@ namespace jQuery_File_Upload_mvc45.Upload
                     }
                 }
 
+                img1.Dispose();
                 return fileName;
             }
             return null;
