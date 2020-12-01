@@ -67,13 +67,11 @@ namespace jQuery_File_Upload_mvc45.Infrastructure
                 Path.GetFileNameWithoutExtension(imageFileName) + Path.GetExtension(imageFileName));
 
             if (File.Exists(thumbnailImageFileName))
-
                 return thumbnailImageFileName;
 
             using (var originalImage = new Bitmap(imageFileName))
             {
                 var cropRect = GetCropRect(originalImage);
-
                 using (var croppedImage = originalImage.Clone(cropRect, originalImage.PixelFormat))
                 {
                     using (var thumbnailImage = croppedImage.GetThumbnailImage(targetWidth, targetHeight, () => true, new IntPtr()))
@@ -110,7 +108,6 @@ namespace jQuery_File_Upload_mvc45.Infrastructure
             Url = handlerPath + "?f=" + Name;
             DeleteUrl = handlerPath + "?f=" + Name;
             DeleteType = "DELETE";
-
             ThumbnailUrl = defaultImageUrl;
 
             if (await ImageDetector.GetKnownFileType(fileInfo.FullName).ConfigureAwait(false) != FileType.Unknown)
