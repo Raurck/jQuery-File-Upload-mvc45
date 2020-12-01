@@ -120,10 +120,12 @@ namespace jQuery_File_Upload_mvc45.Infrastructure
 
         private static async Task<string> GetEncodedFileContent(string fileName)
         {
-            var stream = File.OpenRead(fileName);
-            var buffer = new byte[stream.Length];
-            await stream.ReadAsync(buffer, 0, (int) stream.Length).ConfigureAwait(false);
-            return Convert.ToBase64String(buffer);
+            using (var stream = File.OpenRead(fileName))
+            {
+                var buffer = new byte[stream.Length];
+                await stream.ReadAsync(buffer, 0, (int) stream.Length).ConfigureAwait(false);
+                return Convert.ToBase64String(buffer);
+            }
         }
     }
 }
