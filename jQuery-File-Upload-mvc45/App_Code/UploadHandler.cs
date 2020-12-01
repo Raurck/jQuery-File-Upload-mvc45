@@ -1,242 +1,257 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Threading.Tasks;
 using System.Web;
-using System.Web.Script.Serialization;
-using jQuery_File_Upload_mvc45.Upload;
+using jQuery_File_Upload_mvc45.Infrastructure;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
-
-public class UploadHandler : IHttpHandler
+namespace jQuery_File_Upload_mvc45
 {
-    /// <summary>
-    /// You will need to configure this handler in the Web.config file of your 
-    /// web and register it with IIS before being able to use it. For more information
-    /// see the following link: http://go.microsoft.com/?linkid=8101007
-    /// </summary>
-    #region IHttpHandler Members
-
-    private readonly JavaScriptSerializer js;
-
-    private string StorageRoot
+    public class UploadHandler : HttpTaskAsyncHandler
     {
-        get { return Path.Combine(HttpContext.Current.Server.MapPath("~/Files/")); } //Path should! always end with '/'
-    }
+        /// <summary>
+        ///   You will need to configure this handler in the Web.config file of your
+        ///   web and register it with IIS before being able to use it. For more information
+        ///   see the following link: http://go.microsoft.com/?linkid=8101007
+        /// </summary>
 
-    public UploadHandler()
-    {
-        js = new JavaScriptSerializer();
-        js.MaxJsonLength = 41943040;
-    }
+        #region IHttpHandler Members
 
-    public bool IsReusable
-    {
-        // Return false in case your Managed Handler cannot be reused for another request.
-        // Usually this would be false in case you have some state information preserved per request.
-        get { return false; }
-    }
+        private const string HttpVerbGet = "GET";
+        private const string HttpVerbPost = "POST";
+        private const string HttpVerbPut = "PUT";
+        private const string HttpVerbHead = "HEAD";
+        private const string HttpVerbOptions = "OPTIONS";
+        private const string HttpVerbDelete = "DELETE";
+        private const string ContentRangeHeader = "Content-Range";
+        private const string ContentDispositionHeader = "Content-Disposition";
+        private const string StoragePath = "~/Files/";
+        private const string StrChunkError = "Attempt to upload chunked file containing no or more than one fragment per request";
+        private const string StrStreamError = "Upload request contains no file input stream";
+        private const string QueryFileNameParameter = "f";
+        private static string StorageRoot => Path.Combine(HttpContext.Current.Server.MapPath(StoragePath)); //Path should! always end with '/'
 
-    public void ProcessRequest(HttpContext context)
-    {
-        //write your handler implementation here.
-
-        context.Response.AddHeader("Pragma", "no-cache");
-        context.Response.AddHeader("Cache-Control", "private, no-cache");
-
-        HandleMethod(context);
-
-    }
-    // Handle request based on method
-    private void HandleMethod(HttpContext context)
-    {
-        switch (context.Request.HttpMethod)
+        public override Task ProcessRequestAsync(HttpContext context)
         {
-            case "HEAD":
-            case "GET":
-                if (GivenFilename(context)) DeliverFile(context);
-                else ListCurrentFiles(context);
-                break;
+            context.Response.AddHeader("Pragma", "no-cache");
+            context.Response.AddHeader("Cache-Control", "private, no-cache");
 
-            case "POST":
-            case "PUT":
-                UploadFile(context);
-                break;
-
-            case "DELETE":
-                DeleteFile(context);
-                break;
-
-            case "OPTIONS":
-                ReturnOptions(context);
-                break;
-
-            default:
-                context.Response.ClearHeaders();
-                context.Response.StatusCode = 405;
-                break;
-        }
-    }
-
-    private static void ReturnOptions(HttpContext context)
-    {
-        context.Response.AddHeader("Allow", "DELETE,GET,HEAD,POST,PUT,OPTIONS");
-        context.Response.StatusCode = 200;
-    }
-
-    // Delete file from the server
-    private void DeleteFile(HttpContext context)
-    {
-        var statuses = new List<string>();
-        var filePath = StorageRoot + context.Request["f"];
-        if (File.Exists(filePath))
-        {
-            statuses.Add(filePath);
-
-            File.Delete(filePath);
+            return HandleMethod(context);
         }
 
-        AddResponceJSONHeaders(context);
-
-        var files1 = "{ \"files\": [";
-        var firstRun = true;
-        foreach (string fs in statuses)
-        {
-            files1 = files1 + (firstRun ? "" : ",") + "{ \"" + fs + "\": true }";
-            if (firstRun) { firstRun = false; }
-        }
-        files1 = files1 + "]}";
-
-        var jsonObj = js.Serialize(files1);
-        context.Response.Write(jsonObj);
-    }
-
-    // Upload file to the server
-    private void UploadFile(HttpContext context)
-    {
-        var statuses = new List<FilesStatus>();
-        var headers = context.Request.Headers;
-
-        if (string.IsNullOrEmpty(headers["X-File-Name"]))
-        {
-            UploadWholeFile(context, statuses);
-        }
-        else
-        {
-            UploadPartialFile(headers["X-File-Name"], context, statuses);
-        }
-
-        WriteJsonIframeSafe(context, statuses);
-    }
-
-    // Upload partial file
-    private void UploadPartialFile(string fileName, HttpContext context, List<FilesStatus> statuses)
-    {
-        if (context.Request.Files.Count != 1) throw new HttpRequestValidationException("Attempt to upload chunked file containing more than one fragment per request");
-        var inputStream = context.Request.Files[0].InputStream;
-        var fullName = StorageRoot + Path.GetFileName(fileName);
-
-        using (var fs = new FileStream(fullName, FileMode.Append, FileAccess.Write))
-        {
-            var buffer = new byte[1024];
-
-            var l = inputStream.Read(buffer, 0, 1024);
-            while (l > 0)
+        private static JsonSerializerSettings JsonSettings =>
+            new JsonSerializerSettings
             {
-                fs.Write(buffer, 0, l);
-                l = inputStream.Read(buffer, 0, 1024);
+                ContractResolver = new DefaultContractResolver
+                {
+                    NamingStrategy = new CamelCaseNamingStrategy()
+                },
+                Formatting = Formatting.Indented
+            };
+
+        // Handle request based on method
+        private async Task HandleMethod(HttpContext context)
+        {
+            switch (context.Request.HttpMethod)
+            {
+                case HttpVerbHead:
+                case HttpVerbGet:
+                    if (GivenFilename(context)) DeliverFile(context);
+                    else await ListCurrentFiles(context).ConfigureAwait(false);
+                    break;
+
+                case HttpVerbPost:
+                case HttpVerbPut:
+                    await UploadFile(context).ConfigureAwait(false);
+                    break;
+
+                case HttpVerbDelete:
+                    DeleteFile(context);
+                    break;
+
+                case HttpVerbOptions:
+                    ReturnOptions(context);
+                    break;
+
+                default:
+                    context.Response.ClearHeaders();
+                    context.Response.StatusCode = (int) HttpStatusCode.MethodNotAllowed;
+                    break;
             }
-            fs.Flush();
-            fs.Close();
         }
-        statuses.Add(new FilesStatus(new FileInfo(fullName)));
-    }
 
-    // Upload entire file
-    private void UploadWholeFile(HttpContext context, List<FilesStatus> statuses)
-    {
-        for (int i = 0; i < context.Request.Files.Count; i++)
+        private static void ReturnOptions(HttpContext context)
         {
-            var file = context.Request.Files[i];
-
-            var fullPath = StorageRoot + Path.GetFileName(file.FileName);
-
-            file.SaveAs(fullPath);
-
-            string fullName = Path.GetFileName(file.FileName);
-            statuses.Add(new FilesStatus(fullName, file.ContentLength, fullPath));
+            context.Response.AddHeader("Allow", $"{HttpVerbOptions},{HttpVerbHead},{HttpVerbGet},{HttpVerbPost},{HttpVerbPut},{HttpVerbDelete}");
+            context.Response.StatusCode = 200;
         }
-    }
 
-    private void AddResponceJSONHeaders(HttpContext context)
-    {
-        context.Response.AddHeader("Vary", "Accept");
-        try
+        // Delete file from the server
+        private static void DeleteFile(HttpContext context)
         {
-            if (context.Request["HTTP_ACCEPT"].Contains("application/json"))
+            var filePath = StorageRoot + context.Request[QueryFileNameParameter];
+
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+
+            var deleteResult = new FileDeleteResult
             {
-                context.Response.ContentType = "application/json";
-                context.Response.AddHeader("Pragma", "no-cache");
-                context.Response.AddHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+                Files = new Dictionary<string, bool>
+                {
+                    [context.Request[QueryFileNameParameter]] = true
+                }
+            };
+            AddResponseJsonHeaders(context);
+            context.Response.Write(JsonConvert.SerializeObject(deleteResult, JsonSettings));
+        }
+
+        // Upload file to the server
+        private async Task UploadFile(HttpContext context)
+        {
+            var statuses = new List<FilesStatus>();
+            var headers = context.Request.Headers;
+            if (IsWholeFileUploadRequest(headers, out var contentRangeHeader))
+                await UploadWholeFile(context, statuses).ConfigureAwait(false);
+            else if (IsPartialFileUploadRequest(headers, out var contentDispositionHeader))
+            {
+                await UploadPartialFile(
+                        (contentDispositionHeader.FileNameStar ?? contentDispositionHeader.FileName).Replace("\"", string.Empty),
+                        contentRangeHeader,
+                        context,
+                        statuses)
+                    .ConfigureAwait(false);
+            }
+
+            WriteJsonIframeSafe(context, statuses);
+        }
+
+        private static bool IsPartialFileUploadRequest(NameValueCollection headers, out ContentDispositionHeaderValue contentDispositionHeader)
+        {
+            return ContentDispositionHeaderValue.TryParse(headers[ContentDispositionHeader], out contentDispositionHeader)
+                   && !string.IsNullOrWhiteSpace(contentDispositionHeader.FileName);
+        }
+
+        private static bool IsWholeFileUploadRequest(NameValueCollection headers, out ContentRangeHeaderValue contentRangeHeader)
+        {
+            return !ContentRangeHeaderValue.TryParse(headers[ContentRangeHeader], out contentRangeHeader)
+                   || contentRangeHeader.From == 0 && contentRangeHeader.To == contentRangeHeader.Length;
+        }
+
+        // Upload partial file
+        private static async Task UploadPartialFile(string fileName, ContentRangeHeaderValue rangeHeader, HttpContext context, ICollection<FilesStatus> statuses)
+        {
+            if (context.Request.Files.Count != 1)
+                throw new HttpRequestValidationException(StrChunkError);
+            var inputStream = context.Request.Files[0]?.InputStream;
+            if (inputStream == null)
+                throw new HttpRequestValidationException(StrStreamError);
+
+            var fullName = Path.Combine(StorageRoot, fileName);
+            using (var fs = new FileStream(fullName, FileMode.OpenOrCreate, FileAccess.Write))
+            {
+                fs.Seek(rangeHeader.From ?? 0, SeekOrigin.Begin);
+                await inputStream.CopyToAsync(fs).ConfigureAwait(false);
+            }
+
+            if (IsLastChunkUploaded(rangeHeader))
+                statuses.Add(await FilesStatus.GetFileStatus(new FileInfo(fullName)).ConfigureAwait(false));
+        }
+
+        private static bool IsLastChunkUploaded(ContentRangeHeaderValue rangeHeader)
+        {
+            return rangeHeader.To == rangeHeader.Length - 1;
+        }
+
+        // Upload entire file
+        private static async Task UploadWholeFile(HttpContext context, List<FilesStatus> statuses)
+        {
+            var prepareResults = context.Request.Files.AllKeys
+                .Select(fileName => context.Request.Files[fileName])
+                .Where(file => file != null)
+                .Select(
+                    file =>
+                    {
+                        var fullPath = StorageRoot + file.FileName;
+                        file.SaveAs(fullPath);
+                        return FilesStatus.GetFileStatus(fullPath);
+                    })
+                .ToArray();
+            await Task.WhenAll(prepareResults).ConfigureAwait(false);
+            statuses.AddRange(prepareResults.Select(t => t.Result));
+        }
+
+        private static void AddResponseJsonHeaders(HttpContext context)
+        {
+            context.Response.AddHeader("Vary", "Accept");
+            try
+            {
+                if (context.Request["HTTP_ACCEPT"].Contains("application/json"))
+                {
+                    context.Response.ContentType = "application/json";
+                    context.Response.AddHeader("Pragma", "no-cache");
+                    context.Response.AddHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+                    context.Response.AddHeader("X-Content-Type-Options", "nosniff");
+                }
+                else
+                    context.Response.ContentType = "text/plain";
+            }
+            catch
+            {
+                context.Response.ContentType = "text/plain";
+            }
+        }
+
+        private static void WriteJsonIframeSafe(HttpContext context, List<FilesStatus> statuses)
+        {
+            AddResponseJsonHeaders(context);
+            var result = new FileUploadResult
+            {
+                Files = statuses
+            };
+            context.Response.Write(JsonConvert.SerializeObject(result, JsonSettings));
+        }
+
+        private static bool GivenFilename(HttpContext context)
+        {
+            return !string.IsNullOrEmpty(context.Request[QueryFileNameParameter]);
+        }
+
+        private static void DeliverFile(HttpContext context)
+        {
+            var filename = context.Request[QueryFileNameParameter];
+            var filePath = StorageRoot + filename;
+
+            if (File.Exists(filePath))
+            {
                 context.Response.AddHeader("X-Content-Type-Options", "nosniff");
+                context.Response.AddHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+                context.Response.ContentType = "application/octet-stream";
+                context.Response.ClearContent();
+                context.Response.WriteFile(filePath);
             }
             else
-                context.Response.ContentType = "text/plain";
-        }
-        catch
-        {
-            context.Response.ContentType = "text/plain";
+                context.Response.StatusCode = 404;
         }
 
-    }
-
-    private void WriteJsonIframeSafe(HttpContext context, List<FilesStatus> statuses)
-    {
-        AddResponceJSONHeaders(context);
-        dynamic files1 = new
+        private static async Task ListCurrentFiles(HttpContext context)
         {
-            files = statuses
-        };
-
-        var jsonObj = js.Serialize(files1);
-        context.Response.Write(jsonObj);
-    }
-
-    private static bool GivenFilename(HttpContext context)
-    {
-        return !string.IsNullOrEmpty(context.Request["f"]);
-    }
-
-    private void DeliverFile(HttpContext context)
-    {
-        var filename = context.Request["f"];
-        var filePath = StorageRoot + filename;
-
-        if (File.Exists(filePath))
-        {
-            context.Response.AddHeader("X-Content-Type-Options", "nosniff");
-            context.Response.AddHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
-            context.Response.ContentType = "application/octet-stream";
-            context.Response.ClearContent();
-            context.Response.WriteFile(filePath);
+            var files =
+                new DirectoryInfo(StorageRoot)
+                    .GetFiles("*", SearchOption.TopDirectoryOnly)
+                    .Where(f => !f.Attributes.HasFlag(FileAttributes.Hidden))
+                    .Select(f => FilesStatus.GetFileStatus(f))
+                    .ToArray();
+            await Task.WhenAll(files).ConfigureAwait(false);
+            context.Response.AddHeader("Content-Disposition", "inline; filename=\"files.json\"");
+            context.Response.Write(JsonConvert.SerializeObject(files, JsonSettings));
+            context.Response.ContentType = "application/json";
         }
-        else
-            context.Response.StatusCode = 404;
-    }
 
-    private void ListCurrentFiles(HttpContext context)
-    {
-        var files =
-            new DirectoryInfo(StorageRoot)
-                .GetFiles("*", SearchOption.TopDirectoryOnly)
-                .Where(f => !f.Attributes.HasFlag(FileAttributes.Hidden))
-                .Select(f => new FilesStatus(f))
-                .ToArray();
-
-        string jsonObj = js.Serialize(files);
-        context.Response.AddHeader("Content-Disposition", "inline; filename=\"files.json\"");
-        context.Response.Write(jsonObj);
-        context.Response.ContentType = "application/json";
+        #endregion
     }
-    #endregion
 }
-

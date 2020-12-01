@@ -7,7 +7,8 @@
 
     $('#fileupload').fileupload('option', {
         url: '//localhost:9137/upload',
-        maxFileSize: 500000000,
+        maxChunkSize: 2000000,
+        maxFileSize: 100000000,
         resizeMaxWidth: 1920,
         resizeMaxHeight: 1200,
         disableImageResize: /Android(?!.*Chrome)|Opera/

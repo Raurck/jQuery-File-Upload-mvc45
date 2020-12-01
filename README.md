@@ -1,6 +1,6 @@
-# jQuery-File-Upload-mvc45
+# jQuery-File-Upload-mvc48
 
-This is an example of integration jQuery-File-Upload plugin with an ASP.NET MVC 4.5 application.
+This is an example of integration jQuery-File-Upload plugin with an ASP.NET MVC 4.8 application.
 
 It is based on [original plugin demo](https://github.com/blueimp/jQuery-File-Upload/) and [maxpavlov/jQuery-File-Upload.MVC3](https://github.com/maxpavlov/jQuery-File-Upload.MVC3)
  supports batch upload, download and deletion of uploaded files.
